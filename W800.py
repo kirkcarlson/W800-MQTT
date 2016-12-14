@@ -19,6 +19,8 @@ repeatTime = .750 # seconds... remember Linux is not realtime
   # time and it not desired to call a single key press multiple espeically for
   # DIM and BRIGHTEN
 
+NoSubtopic = '' # flag to not sent MQTT message
+
 houseCode = [ # this list is treated as an indexed array
   'M', #0x00
   'E', #0x01
@@ -46,12 +48,12 @@ level = {
 
   "INFO":    5, # -- decode of minimized messages
   "WARNING": 6, # -- detection of transient, fixable errors and possible interference
-  "ERROR":   7 # -- detection of hard  error condition
+  "ERROR":   7  # -- detection of hard  error condition
 }
 
 
 ### GLOBALS
-subtopic = ''
+subtopic = NoSubtopic
 commandCodePressed = ''
 command = ''
 
@@ -62,6 +64,7 @@ loggingLevel = level['ERROR']
 MQTT_brokerHost = "localhost"
 MQTT_QOS = 0
 MQTT_retention = True
+MQTT_mapping = []
 
 
 
@@ -162,12 +165,12 @@ for unit in units:
 ### confirm the setting of the defaults ....CONFIG DEBUG ONLY
 #print "portID:", portID
 #print "USBport:", USBport
-print "loggingLevel:", loggingLevel
+#print "loggingLevel:", loggingLevel
 #print "logFile:", logFile
-print "MQTT_brokerHost:", MQTT_brokerHost
+#print "MQTT_brokerHost:", MQTT_brokerHost
 #print "MQTT_QOS:", MQTT_QOS
 #print "MQTTtopic:", MQTT_topic
-print "MQTT_mappingList:", MQTT_mappingList
+#print "MQTT_mappingList:", MQTT_mappingList
 
 
 
@@ -175,10 +178,13 @@ print "MQTT_mappingList:", MQTT_mappingList
 
 
 def mapping( unit):
-  for row in MQTT_mappingList:
-    if row[0] == unit:
-      return row[1]
-  return ''
+  if MQTT_mappingList == []:
+    return unit
+  else:
+    for row in MQTT_mappingList:
+      if row[0] == unit:
+        return row[1]
+    return ''
 
 
 def log(level, message):
@@ -247,6 +253,8 @@ def discardOldestMessageByte():
 
   
 def logReceiptW800message():
+  global command
+
   logMessage = ""
   # prepare logging message with raw inputs, as appropriate
   if loggingLevel <= level['DEBUG 3']:
@@ -300,11 +308,11 @@ bit  function
     command = houseCodePressed + str(unitCodePressed) + " " + commandCodePressed
     unit =  houseCodePressed + str(unitCodePressed)
     
-    alias = mapping (unit)
+    alias = mapping( unit)
     if alias is not '':
       subtopic = alias
     else:
-      subtopic = ''
+      subtopic = NoSubtopic # flag to not send MQTT
     command = unit + " " + commandCodePressed
   else:
     if rearranged[0] == 0x11:
@@ -313,11 +321,11 @@ bit  function
       commandCodePressed = 'DIM'
 
     command = commandCodePressed
-    alias = mapping (command)
+    alias = mapping( command)
     if alias is not '':
       subtopic = alias
     else:
-      subtopic = ''
+      subtopic = NoSubtopic # flag to not send MQTT
 
 
 def decodeX10security ():
@@ -330,14 +338,18 @@ def decodeX10security ():
       commandCodePressed = "OPEN"
     else:
       commandCodePressed = "CLOSED"
-    unit = str(rearranged[3])
+    unit = "DS" + str(rearranged[3])
     command = unit + " " + commandCodePressed
-    subtopic = "DS10A-" + unit
+    alias = mapping( unit)
+    if alias is not '':
+      subtopic = alias
+    else:
+      subtopic = NoSubtopic # flag to not send MQTT
   else:
     # unknown X10 security device
     commandCodePressed = "UNKNOWN"
     unitNumber = "Unknown"
-    subtopic = ""
+    subtopic = NoSubtopic # flag to not send MQTT
 
 
 
@@ -408,6 +420,6 @@ while True:
         discardOldestMessageByte()
         count = 3
       logReceiptW800message()
-  if subtopic is not '':
+  if subtopic is not NoSubtopic:
     log( "INFO", "Sending MQTT message: /" + MQTT_topic + subtopic + ":" + commandCodePressed)
     publish.single(MQTT_topic + subtopic, commandCodePressed, hostname=MQTT_brokerHost)
